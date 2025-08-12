@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .tool-test {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .response {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>MCP Server Test Client</h1>
+    
+    <div class="container">
+        <h2>Connection Status</h2>
+        <div id="status" class="status disconnected">Disconnected</div>
+        <button id="connectBtn" onclick="connect()">Connect to MCP Server</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div class="container">
+        <h2>Quick Tool Tests</h2>
+        <div class="tool-test">
+            <div>
+                <h3>Get Current Time</h3>
+                <select id="timeFormat">
+                    <option value="readable">Readable Format</option>
+                    <option value="iso">ISO Format</option>
+                </select>
+                <button onclick="testCurrentTime()">Get Current Time</button>
+                <div id="timeResponse" class="response"></div>
+            </div>
+            
+            <div>
+                <h3>Echo Tool</h3>
+                <input type="text" id="echoText" placeholder="Enter text to echo" value="Hello, MCP!">
+                <button onclick="testEcho()">Test Echo</button>
+                <div id="echoResponse" class="response"></div>
+            </div>
+        </div>
+        
+        <div class="tool-test">
+            <div>
+                <h3>Calculator</h3>
+                <input type="text" id="calcExpression" placeholder="Enter expression" value="10 + 5">
+                <button onclick="testCalculator()">Calculate</button>
+                <div id="calcResponse" class="response"></div>
+            </div>
+            
+            <div>
+                <h3>List Tools</h3>
+                <button onclick="listTools()">List Available Tools</button>
+                <div id="toolsResponse" class="response"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>Connection Log</h2>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let sessionId = null;
+        let messageEndpoint = null;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusDiv.textContent = `Connected (Session: ${sessionId})`;
+                statusDiv.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusDiv.textContent = 'Disconnected';
+                statusDiv.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            log('Connecting to MCP server...');
+            eventSource = new EventSource('/sse');
+
+            eventSource.onopen = function(event) {
+                log('SSE connection opened');
+            };
+
+            eventSource.addEventListener('endpoint', function(event) {
+                messageEndpoint = event.data;
+                const url = new URL(messageEndpoint, window.location.origin);
+                sessionId = url.searchParams.get('sessionId');
+                log(`Received endpoint: ${messageEndpoint}`);
+                log(`Session ID: ${sessionId}`);
+                updateStatus(true);
+            });
+
+            eventSource.addEventListener('message', function(event) {
+                log(`Received message: ${event.data}`);
+            });
+
+            eventSource.onerror = function(event) {
+                log('SSE connection error');
+                updateStatus(false);
+            };
+
+            eventSource.onclose = function(event) {
+                log('SSE connection closed');
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            sessionId = null;
+            messageEndpoint = null;
+            updateStatus(false);
+            log('Disconnected from MCP server');
+        }
+
+        async function sendMcpRequest(method, params = {}) {
+            if (!messageEndpoint || !sessionId) {
+                log('Error: Not connected to MCP server');
+                return null;
+            }
+
+            const request = {
+                jsonrpc: "2.0",
+                id: Date.now(),
+                method: method,
+                params: params
+            };
+
+            try {
+                log(`Sending request: ${JSON.stringify(request)}`);
+                const response = await fetch(messageEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(request)
+                });
+
+                if (response.ok) {
+                    log(`Request sent successfully`);
+                    return true;
+                } else {
+                    const errorText = await response.text();
+                    log(`Request failed: ${response.status} - ${errorText}`);
+                    return false;
+                }
+            } catch (error) {
+                log(`Request error: ${error.message}`);
+                return false;
+            }
+        }
+
+        async function testCurrentTime() {
+            const format = document.getElementById('timeFormat').value;
+            const success = await sendMcpRequest('tools/call', {
+                name: 'get_current_time',
+                arguments: { format: format }
+            });
+            
+            if (success) {
+                document.getElementById('timeResponse').textContent = 'Request sent - check connection log for response';
+            }
+        }
+
+        async function testEcho() {
+            const text = document.getElementById('echoText').value;
+            const success = await sendMcpRequest('tools/call', {
+                name: 'echo',
+                arguments: { text: text }
+            });
+            
+            if (success) {
+                document.getElementById('echoResponse').textContent = 'Request sent - check connection log for response';
+            }
+        }
+
+        async function testCalculator() {
+            const expression = document.getElementById('calcExpression').value;
+            const success = await sendMcpRequest('tools/call', {
+                name: 'calculate',
+                arguments: { expression: expression }
+            });
+            
+            if (success) {
+                document.getElementById('calcResponse').textContent = 'Request sent - check connection log for response';
+            }
+        }
+
+        async function listTools() {
+            const success = await sendMcpRequest('tools/list');
+            
+            if (success) {
+                document.getElementById('toolsResponse').textContent = 'Request sent - check connection log for response';
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Auto-connect on page load
+        window.onload = function() {
+            log('Page loaded - ready to connect');
+        };
+    </script>
+</body>
+</html>
