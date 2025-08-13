@@ -2,12 +2,16 @@ package com.example.mcpserver.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
+import io.modelcontextprotocol.server.transport.WebFluxSseServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.reactive.function.server.RouterFunction;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -30,13 +34,10 @@ public class McpServerConfig {
      * @return Configured HttpServletSseServerTransportProvider
      */
     @Bean
-    public HttpServletSseServerTransportProvider mcpTransportProvider(ObjectMapper objectMapper) {
-        return HttpServletSseServerTransportProvider.builder()
+    public HttpServletStatelessServerTransport mcpTransportProvider(ObjectMapper objectMapper) {
+        return HttpServletStatelessServerTransport.builder()
                 .objectMapper(objectMapper)
-                .baseUrl("") // Empty base URL for relative paths
-                .messageEndpoint("/mcp/message") // Endpoint for client-to-server messages
-                .sseEndpoint("/sse") // Endpoint for server-sent events
-                .keepAliveInterval(Duration.ofSeconds(30)) // Keep-alive ping every 30 seconds
+                .messageEndpoint("/mcp")
                 .build();
     }
 
@@ -48,10 +49,10 @@ public class McpServerConfig {
      * @return ServletRegistrationBean for the MCP servlet
      */
     @Bean
-    public ServletRegistrationBean<HttpServletSseServerTransportProvider> mcpServletRegistration(
-            HttpServletSseServerTransportProvider transportProvider) {
+    public ServletRegistrationBean<HttpServletStatelessServerTransport> mcpServletRegistration(
+            HttpServletStatelessServerTransport transportProvider) {
 
-        ServletRegistrationBean<HttpServletSseServerTransportProvider> registration =
+        ServletRegistrationBean<HttpServletStatelessServerTransport> registration =
                 new ServletRegistrationBean<>(transportProvider);
 
         // Register URL patterns that the servlet should handle
@@ -70,7 +71,7 @@ public class McpServerConfig {
      * @return Configured MCP server
      */
     @Bean
-    public McpSyncServer mcpServer(HttpServletSseServerTransportProvider transportProvider) {
+    public McpStatelessSyncServer mcpServer(HttpServletStatelessServerTransport transportProvider) {
         // JSON schema for tools
         String emptyJsonSchema = """
                 {

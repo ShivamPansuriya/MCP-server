@@ -1,7 +1,9 @@
 package com.example.mcpserver.controller;
 
+import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,14 +15,13 @@ import java.util.Map;
  * Provides endpoints for server status, health checks, and administrative operations.
  */
 @RestController
-@RequestMapping("/api/mcp")
 public class McpServerController {
 
-    private final McpSyncServer mcpServer;
-    private final HttpServletSseServerTransportProvider transportProvider;
+    private final McpStatelessSyncServer mcpServer;
+    private final HttpServletStatelessServerTransport transportProvider;
 
     @Autowired
-    public McpServerController(McpSyncServer mcpServer, HttpServletSseServerTransportProvider transportProvider) {
+    public McpServerController(McpStatelessSyncServer mcpServer, HttpServletStatelessServerTransport transportProvider) {
         this.mcpServer = mcpServer;
         this.transportProvider = transportProvider;
     }
@@ -73,21 +74,21 @@ public class McpServerController {
      * @param request The notification request containing method and params
      * @return Response indicating success or failure
      */
-    @PostMapping("/notify")
-    public ResponseEntity<Map<String, String>> sendNotification(@RequestBody NotificationRequest request) {
-        try {
-            transportProvider.notifyClients(request.getMethod(), request.getParams()).block();
-            return ResponseEntity.ok(Map.of(
-                    "status", "success",
-                    "message", "Notification sent successfully"
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of(
-                    "status", "error",
-                    "message", "Failed to send notification: " + e.getMessage()
-            ));
-        }
-    }
+//    @PostMapping("/notify")
+//    public ResponseEntity<Map<String, String>> sendNotification(@RequestBody NotificationRequest request) {
+//        try {
+//            transportProvider.notifyClients(request.getMethod(), request.getParams()).block();
+//            return ResponseEntity.ok(Map.of(
+//                    "status", "success",
+//                    "message", "Notification sent successfully"
+//            ));
+//        } catch (Exception e) {
+//            return ResponseEntity.internalServerError().body(Map.of(
+//                    "status", "error",
+//                    "message", "Failed to send notification: " + e.getMessage()
+//            ));
+//        }
+//    }
 
     /**
      * Get the current server status and statistics.
