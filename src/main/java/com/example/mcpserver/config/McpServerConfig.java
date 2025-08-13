@@ -2,18 +2,14 @@ package com.example.mcpserver.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.server.McpServer;
-import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
-import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
-import io.modelcontextprotocol.server.transport.WebFluxSseServerTransportProvider;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.reactive.function.server.RouterFunction;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -28,35 +24,34 @@ public class McpServerConfig {
 
     /**
      * Creates and configures the MCP server transport provider.
-     * This provider handles HTTP with Server-Sent Events (SSE) transport.
+     * This provider handles Streamable HTTP transport with a single /mcp endpoint.
      *
      * @param objectMapper Jackson ObjectMapper for JSON serialization/deserialization
-     * @return Configured HttpServletSseServerTransportProvider
+     * @return Configured HttpServletStreamableServerTransportProvider
      */
     @Bean
-    public HttpServletStatelessServerTransport mcpTransportProvider(ObjectMapper objectMapper) {
-        return HttpServletStatelessServerTransport.builder()
+    public HttpServletStreamableServerTransportProvider mcpTransportProvider(ObjectMapper objectMapper) {
+        return HttpServletStreamableServerTransportProvider.builder()
                 .objectMapper(objectMapper)
-                .messageEndpoint("/mcp")
                 .build();
     }
 
     /**
      * Registers the MCP transport provider as a servlet.
-     * This allows the HttpServletSseServerTransportProvider to handle HTTP requests.
+     * This allows the HttpServletStreamableServerTransportProvider to handle HTTP requests.
      *
      * @param transportProvider The MCP transport provider
      * @return ServletRegistrationBean for the MCP servlet
      */
     @Bean
-    public ServletRegistrationBean<HttpServletStatelessServerTransport> mcpServletRegistration(
-            HttpServletStatelessServerTransport transportProvider) {
+    public ServletRegistrationBean<HttpServletStreamableServerTransportProvider> mcpServletRegistration(
+            HttpServletStreamableServerTransportProvider transportProvider) {
 
-        ServletRegistrationBean<HttpServletStatelessServerTransport> registration =
+        ServletRegistrationBean<HttpServletStreamableServerTransportProvider> registration =
                 new ServletRegistrationBean<>(transportProvider);
 
-        // Register URL patterns that the servlet should handle
-        registration.addUrlMappings("/sse", "/mcp/message");
+        // Register URL pattern for the single MCP endpoint
+        registration.addUrlMappings("/mcp");
         registration.setName("mcpServlet");
         registration.setLoadOnStartup(1);
 
@@ -71,7 +66,7 @@ public class McpServerConfig {
      * @return Configured MCP server
      */
     @Bean
-    public McpStatelessSyncServer mcpServer(HttpServletStatelessServerTransport transportProvider) {
+    public McpSyncServer mcpServer(HttpServletStreamableServerTransportProvider transportProvider) {
         // JSON schema for tools
         String emptyJsonSchema = """
                 {

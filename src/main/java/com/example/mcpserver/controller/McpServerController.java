@@ -1,9 +1,7 @@
 package com.example.mcpserver.controller;
 
-import io.modelcontextprotocol.server.McpStatelessSyncServer;
 import io.modelcontextprotocol.server.McpSyncServer;
-import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
-import io.modelcontextprotocol.server.transport.HttpServletStatelessServerTransport;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,11 +15,11 @@ import java.util.Map;
 @RestController
 public class McpServerController {
 
-    private final McpStatelessSyncServer mcpServer;
-    private final HttpServletStatelessServerTransport transportProvider;
+    private final McpSyncServer mcpServer;
+    private final HttpServletStreamableServerTransportProvider transportProvider;
 
     @Autowired
-    public McpServerController(McpStatelessSyncServer mcpServer, HttpServletStatelessServerTransport transportProvider) {
+    public McpServerController(McpSyncServer mcpServer, HttpServletStreamableServerTransportProvider transportProvider) {
         this.mcpServer = mcpServer;
         this.transportProvider = transportProvider;
     }
@@ -53,11 +51,11 @@ public class McpServerController {
         Map<String, Object> info = Map.of(
                 "name", "Example MCP Server",
                 "version", "1.0.0",
-                "description", "A sample MCP server implementation using HttpServletSseServerTransportProvider",
+                "description", "A sample MCP server implementation using Streamable HTTP transport",
                 "endpoints", Map.of(
-                        "sse", "/sse",
-                        "message", "/mcp/message"
+                        "mcp", "/mcp"
                 ),
+                "transport", "Streamable HTTP",
                 "features", Map.of(
                         "tools", true,
                         "resources", true,
@@ -100,8 +98,8 @@ public class McpServerController {
         Map<String, Object> status = Map.of(
                 "running", true,
                 "uptime", System.currentTimeMillis(), // In a real implementation, track actual uptime
-                "transport", "HttpServletSseServerTransportProvider",
-                "protocol", "MCP 2024-11-05"
+                "transport", "Streamable HTTP",
+                "protocol", "MCP 2025-06-18"
         );
 
         return ResponseEntity.ok(status);
