@@ -106,11 +106,6 @@ import com.example.mcpserver.tool.api.*;
 import org.springframework.stereotype.Component;
 
 @Component
-@McpToolDefinition(
-    name = "get_current_time",
-    description = "Returns the current date and time",
-    category = "utility"
-)
 public class GetCurrentTimeTool implements McpTool {
     
     private static final String SCHEMA = """
@@ -186,7 +181,6 @@ public class GetCurrentTimeTool implements McpTool {
 - [ ] Create `ToolMetadata`, `ToolResult`, `ValidationResult` classes
 - [ ] Extract `GetCurrentTimeTool` from config
 - [ ] Extract `EchoTool` from config
-- [ ] Create `@McpToolDefinition` annotation
 - [ ] Update existing tests to work with new structure
 - [ ] Verify tools still function correctly
 
@@ -263,27 +257,16 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class DefaultToolFactory implements ToolFactory {
-    private final ApplicationContext applicationContext;
-    
-    public DefaultToolFactory(ApplicationContext applicationContext) {
-        this.applicationContext = applicationContext;
-    }
+   
     
     @Override
-    public McpTool createTool(ToolDefinition definition) {
-        try {
-            Class<? extends McpTool> toolClass = definition.getToolClass();
-            McpTool tool = applicationContext.getBean(toolClass);
-            return tool;
-        } catch (Exception e) {
-            throw new ToolCreationException("Failed to create tool: " + 
-                definition.getMetadata().getName(), e);
-        }
+    public McpTool getTool(ToolDefinition definition) {
+        // use factory pattern to create/get tool *[do not use reflection]
     }
     
     @Override
     public boolean supports(Class<? extends McpTool> toolClass) {
-        return applicationContext.getBeanNamesForType(toolClass).length > 0;
+        // check if factory can create tool
     }
 }
 ```

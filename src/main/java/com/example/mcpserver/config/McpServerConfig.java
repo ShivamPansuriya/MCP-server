@@ -1,26 +1,45 @@
 package com.example.mcpserver.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.mcpserver.tool.api.*;
+import com.example.mcpserver.tool.registry.ToolDefinition;
+import com.example.mcpserver.tool.registry.ToolRegistry;
+import com.example.mcpserver.tool.factory.ToolFactory;
+import com.example.mcpserver.tool.discovery.ToolDiscoveryService;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
-import io.modelcontextprotocol.server.transport.HttpServletSseServerTransportProvider;
+
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Configuration class for MCP (Model Context Protocol) server setup.
- * This class configures the HttpServletSseServerTransportProvider and registers it as a servlet.
+ * This class configures the HttpServletStreamableServerTransportProvider and uses the tool registry system.
  */
 @Configuration
 public class McpServerConfig {
+    private static final Logger logger = LoggerFactory.getLogger(McpServerConfig.class);
+
+    private final ToolRegistry toolRegistry;
+    private final ToolFactory toolFactory;
+    private final ToolDiscoveryService toolDiscoveryService;
+
+    public McpServerConfig(ToolRegistry toolRegistry, ToolFactory toolFactory,
+            ToolDiscoveryService toolDiscoveryService) {
+        this.toolRegistry = toolRegistry;
+        this.toolFactory = toolFactory;
+        this.toolDiscoveryService = toolDiscoveryService;
+    }
 
     /**
      * Creates and configures the MCP server transport provider.
@@ -31,9 +50,7 @@ public class McpServerConfig {
      */
     @Bean
     public HttpServletStreamableServerTransportProvider mcpTransportProvider(ObjectMapper objectMapper) {
-        return HttpServletStreamableServerTransportProvider.builder()
-                .objectMapper(objectMapper)
-                .build();
+        return HttpServletStreamableServerTransportProvider.builder().objectMapper(objectMapper).build();
     }
 
     /**
@@ -61,100 +78,100 @@ public class McpServerConfig {
     /**
      * Creates the MCP server instance with the configured transport provider.
      * This server will handle MCP protocol messages and route them to appropriate handlers.
+     * Uses the tool registry system for dynamic tool registration.
      *
      * @param transportProvider The configured transport provider
      * @return Configured MCP server
      */
     @Bean
     public McpSyncServer mcpServer(HttpServletStreamableServerTransportProvider transportProvider) {
-        // JSON schema for tools
-        String emptyJsonSchema = """
-                {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {}
-                }
-                """;
+        // Ensure tools are discovered before creating the server
+        // The ToolDiscoveryService dependency ensures @PostConstruct has run
 
-        String timeToolSchema = """
-                {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "format": {
-                            "type": "string",
-                            "description": "Optional time format: 'iso' for ISO format, 'readable' for human-readable format",
-                            "enum": ["iso", "readable"]
-                        }
-                    },
-                    "required": []
-                }
-                """;
+        var builder = McpServer.sync(transportProvider).serverInfo("Example MCP Server", "1.0.0")
+                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).prompts(true).logging()
+                        .resources(true, true).build());
 
-        String echoToolSchema = """
-                {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "text": {
-                            "type": "string",
-                            "description": "Text to echo back"
-                        }
-                    },
-                    "required": ["text"]
-                }
-                """;
+        // Register tools from registry
+        List<ToolDefinition> enabledTools = toolRegistry.getEnabledTools();
+        logger.info("Registering {} enabled tools from registry", enabledTools.size());
 
-        // Define the get_current_time tool
-        var getCurrentTimeTool = new McpSchema.Tool(
-                "get_current_time",
-                "Returns the current date and time",
-                timeToolSchema
-        );
+        for (ToolDefinition toolDef : enabledTools) {
+            McpSchema.Tool mcpTool = McpSchema.Tool.builder()
+                    .name(toolDef.getMetadata().getName())
+                    .description(toolDef.getMetadata().getDescription())
+                    .inputSchema(toolDef.getMetadata().getSchema()).build();
 
-        // Define the echo tool
-        var echoTool = new McpSchema.Tool(
-                "echo",
-                "Echoes back the provided text",
-                echoToolSchema
-        );
+            builder.toolCall(mcpTool,
+                    (exchange, request) -> executeToolViaRegistry(toolDef.getMetadata().getName(), request));
 
-        return McpServer.sync(transportProvider)
-                .serverInfo("Example MCP Server", "1.0.0")
-                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
-                .toolCall(getCurrentTimeTool, (exchange, request) -> {
-                    Map<String, Object> arguments = request.arguments();
-                    String format = (String) arguments.getOrDefault("format", "readable");
-                    LocalDateTime now = LocalDateTime.now();
-                    String timeString;
+            logger.debug("Registered tool: {}", toolDef.getMetadata().getName());
+        }
 
-                    if ("iso".equals(format)) {
-                        timeString = now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-                    } else {
-                        timeString = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    }
+        return builder.build();
+    }
 
-                    return new McpSchema.CallToolResult(
-                            List.of(new McpSchema.TextContent("Current time: " + timeString)),
-                            false
-                    );
-                })
-                .toolCall(echoTool, (exchange, request) -> {
-                    Map<String, Object> arguments = request.arguments();
-                    String text = (String) arguments.get("text");
+    /**
+     * Executes a tool via the registry system.
+     * This is a temporary implementation that will be replaced by ToolExecutionEngine in Phase 3.
+     *
+     * @param toolName the name of the tool to execute
+     * @param request  the MCP tool call request
+     * @return the tool call result
+     */
+    private McpSchema.CallToolResult executeToolViaRegistry(String toolName,
+            McpSchema.CallToolRequest request) {
+        try {
+            Optional<ToolDefinition> toolDef = toolRegistry.findByName(toolName);
+            if (toolDef.isEmpty()) {
+                logger.warn("Tool not found in registry: {}", toolName);
+                return new McpSchema.CallToolResult(
+                        List.of(new McpSchema.TextContent("Tool not found: " + toolName)), true);
+            }
 
-                    if (text == null) {
-                        return new McpSchema.CallToolResult(
-                                List.of(new McpSchema.TextContent("Error: 'text' parameter is required")),
-                                true
-                        );
-                    }
+            // Create tool instance using factory
+            McpTool tool = toolFactory.createTool(toolDef.get());
 
-                    return new McpSchema.CallToolResult(
-                            List.of(new McpSchema.TextContent("Echo: " + text)),
-                            false
-                    );
-                })
-                .build();
+            // Create execution context
+            ToolContext context =
+                    ToolContext.builder().sessionId(extractSessionId(request)).requestId(generateRequestId())
+                            .build();
+
+            // Validate arguments
+            ValidationResult validation = tool.validate(request.arguments());
+            if (!validation.isValid()) {
+                logger.warn("Tool validation failed for {}: {}", toolName, validation.getFormattedErrors());
+                return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(
+                        "Validation failed: " + validation.getFormattedErrors())), true);
+            }
+
+            // Execute tool
+            ToolResult result = tool.execute(context, request.arguments());
+            toolDef.get().incrementExecutionCount();
+
+            return new McpSchema.CallToolResult(result.getContent(), result.isError());
+
+        } catch (Exception e) {
+            logger.error("Error executing tool {}: {}", toolName, e.getMessage(), e);
+            return new McpSchema.CallToolResult(
+                    List.of(new McpSchema.TextContent("Execution failed: " + e.getMessage())), true);
+        }
+    }
+
+    /**
+     * Extracts session ID from the request.
+     * Temporary implementation - will be improved in later phases.
+     */
+    private String extractSessionId(McpSchema.CallToolRequest request) {
+        // For now, return a default session ID
+        // In a real implementation, this would extract from the exchange context
+        return "default-session";
+    }
+
+    /**
+     * Generates a unique request ID.
+     */
+    private String generateRequestId() {
+        return UUID.randomUUID().toString();
     }
 }

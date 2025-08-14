@@ -35,7 +35,7 @@ class McpServerApplicationTests {
     void mcpServerHealthCheck() {
         // Test the health endpoint
         ResponseEntity<Map> response = restTemplate.getForEntity(
-                "http://localhost:" + port + "/api/mcp/health", Map.class);
+                "http://localhost:" + port + "/health", Map.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -46,7 +46,7 @@ class McpServerApplicationTests {
     void mcpServerInfo() {
         // Test the info endpoint
         ResponseEntity<Map> response = restTemplate.getForEntity(
-                "http://localhost:" + port + "/api/mcp/info", Map.class);
+                "http://localhost:" + port + "/info", Map.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -58,12 +58,12 @@ class McpServerApplicationTests {
     void mcpServerStatus() {
         // Test the status endpoint
         ResponseEntity<Map> response = restTemplate.getForEntity(
-                "http://localhost:" + port + "/api/mcp/status", Map.class);
+                "http://localhost:" + port + "/status", Map.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().get("running")).isEqualTo(true);
-        assertThat(response.getBody().get("transport")).isEqualTo("HttpServletSseServerTransportProvider");
+        assertThat(response.getBody().get("transport")).isEqualTo("Streamable HTTP");
     }
 
     @Test

@@ -1,10 +1,10 @@
-# MCP Server with HttpServletSseServerTransportProvider
+# MCP Server with Streamable HTTP Transport
 
-This project demonstrates how to implement a Model Context Protocol (MCP) server using the Java SDK's `HttpServletSseServerTransportProvider`. The server provides HTTP with Server-Sent Events (SSE) transport for MCP communication.
+This project demonstrates how to implement a Model Context Protocol (MCP) server using the Java SDK's `HttpServletStreamableServerTransportProvider`. The server provides Streamable HTTP transport for MCP communication with a single endpoint.
 
 ## Features
 
-- **HttpServletSseServerTransportProvider**: Servlet-based MCP transport using SSE
+- **HttpServletStreamableServerTransportProvider**: Servlet-based MCP transport using Streamable HTTP
 - **Sample Tools**: Echo and calculator tools for demonstration
 - **Sample Resources**: JSON data resources
 - **REST API**: Management endpoints for monitoring and control
@@ -14,7 +14,7 @@ This project demonstrates how to implement a Model Context Protocol (MCP) server
 
 The MCP server consists of several key components:
 
-1. **HttpServletSseServerTransportProvider**: Handles HTTP/SSE transport
+1. **HttpServletStreamableServerTransportProvider**: Handles Streamable HTTP transport
 2. **McpServerConfig**: Spring configuration for MCP components
 3. **ExampleMcpHandler**: Implements MCP tools and resources
 4. **McpServerService**: Manages server lifecycle and handler registration
@@ -24,28 +24,27 @@ The MCP server consists of several key components:
 
 ### MCP Protocol Endpoints
 
-- **SSE Endpoint**: `GET /sse` - Establishes Server-Sent Events connection
-- **Message Endpoint**: `POST /mcp/message?sessionId={sessionId}` - Handles client messages
+- **Streamable HTTP Endpoint**: `GET|POST /mcp` - Single endpoint for all MCP communication
+  - `GET /mcp` with `Accept: text/event-stream` - Establishes SSE connection
+  - `POST /mcp` with JSON-RPC messages - Handles client requests
 
 ### Management REST API
 
-- **Health Check**: `GET /api/mcp/health` - Server health status
-- **Server Info**: `GET /api/mcp/info` - Server information and configuration
-- **Server Status**: `GET /api/mcp/status` - Current server status
-- **Send Notification**: `POST /api/mcp/notify` - Send notification to all clients
+- **Health Check**: `GET /health` - Server health status
+- **Server Info**: `GET /info` - Server information and configuration
+- **Server Status**: `GET /status` - Current server status
 
 ## Available Tools
 
-1. **echo**: Echoes back the provided text
-   - Parameters: `text` (string) - Text to echo back
+1. **get_current_time**: Returns the current date and time
+   - Parameters: `format` (string, optional) - Time format: 'iso' for ISO format, 'readable' for human-readable format
 
-2. **calculate**: Performs basic arithmetic calculations
-   - Parameters: `expression` (string) - Mathematical expression (e.g., "2 + 3")
+2. **echo**: Echoes back the provided text
+   - Parameters: `text` (string, required) - Text to echo back
 
 ## Available Resources
 
-1. **example://sample-data**: Sample JSON data with timestamp
-2. **example://server-config**: Current server configuration
+Currently, this server focuses on tool implementation. Resources can be added by extending the server configuration.
 
 ## Getting Started
 
@@ -67,32 +66,32 @@ The MCP server consists of several key components:
    ./mvnw spring-boot:run
    ```
 
-4. The server will start on port 8080
+4. The server will start on port 9092
 
 ### Testing the Server
 
 1. **Health Check**:
    ```bash
-   curl http://localhost:8080/api/mcp/health
+   curl http://localhost:9092/health
    ```
 
 2. **Server Info**:
    ```bash
-   curl http://localhost:8080/api/mcp/info
+   curl http://localhost:9092/info
    ```
 
-3. **Connect via SSE** (using curl):
+3. **Connect via Streamable HTTP** (using curl):
    ```bash
-   curl -N -H "Accept: text/event-stream" http://localhost:8080/sse
+   curl -N -H "Accept: text/event-stream" http://localhost:9092/mcp
    ```
 
 ### MCP Client Connection
 
 To connect an MCP client to this server:
 
-1. **SSE Connection**: Connect to `http://localhost:8080/sse`
-2. **Message Endpoint**: Use the endpoint URL provided in the SSE `endpoint` event
-3. **Session Management**: Include the `sessionId` parameter in message requests
+1. **Streamable HTTP**: Use transport type "Streamable HTTP"
+2. **Endpoint URL**: `http://localhost:9092/mcp`
+3. **Protocol**: The server supports both stateless POST requests and optional SSE streaming
 
 ## Configuration
 
@@ -100,7 +99,7 @@ The server can be configured through `application.properties`:
 
 ```properties
 # Server Configuration
-server.port=8080
+server.port=9092
 
 # Logging
 logging.level.com.example.mcpserver=DEBUG
@@ -109,6 +108,29 @@ logging.level.io.modelcontextprotocol=DEBUG
 # Application
 spring.application.name=mcp-server
 ```
+
+## Streamable HTTP Implementation
+
+This server implements the **Streamable HTTP** transport protocol as specified in the MCP specification. Key features:
+
+### Transport Protocol Compliance
+- ✅ **Single Endpoint**: Uses `/mcp` for all MCP communication
+- ✅ **HTTP Methods**: Supports both GET and POST requests
+- ✅ **Content Negotiation**: Handles `Accept` headers for JSON and SSE responses
+- ✅ **Session Management**: Automatic session creation and management
+- ✅ **Protocol Negotiation**: Supports MCP protocol versions 2025-03-26 and 2025-06-18
+
+### MCP Inspector Compatibility
+The server is fully compatible with MCP Inspector v0.15.0:
+- **Transport Type**: Select "Streamable HTTP" in MCP Inspector
+- **URL**: Use `http://localhost:9092/mcp`
+- **Connection**: Automatic session establishment and tool discovery
+
+### Protocol Features
+- **JSON-RPC 2.0**: Full compliance with JSON-RPC message format
+- **Tool Execution**: Supports `tools/list` and `tools/call` methods
+- **Error Handling**: Proper error responses and validation
+- **Streaming**: Optional SSE streaming for real-time communication
 
 ## Dependencies
 
