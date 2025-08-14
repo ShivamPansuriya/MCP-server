@@ -21,11 +21,19 @@ class ToolDiscoveryServiceTest {
         // When - discovery happens automatically via @PostConstruct
         // But we can verify the results
 
-        // Then
+        // Then - verify original tools
         assertThat(toolRegistry.isRegistered("get_current_time")).isTrue();
         assertThat(toolRegistry.isRegistered("echo")).isTrue();
-        assertThat(discoveryService.getDiscoveredToolCount()).isEqualTo(2);
-        assertThat(discoveryService.getEnabledToolCount()).isEqualTo(2);
+
+        // Verify new incident management tools
+        assertThat(toolRegistry.isRegistered("create_incident")).isTrue();
+        assertThat(toolRegistry.isRegistered("get_updatable_fields")).isTrue();
+        assertThat(toolRegistry.isRegistered("update_incident")).isTrue();
+        assertThat(toolRegistry.isRegistered("delete_incident")).isTrue();
+
+        // Verify total count (2 original + 4 incident management = 6)
+        assertThat(discoveryService.getDiscoveredToolCount()).isEqualTo(6);
+        assertThat(discoveryService.getEnabledToolCount()).isEqualTo(6);
     }
 
     @Test
