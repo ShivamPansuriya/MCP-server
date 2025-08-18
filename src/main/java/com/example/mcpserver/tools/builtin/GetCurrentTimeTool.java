@@ -1,6 +1,7 @@
 package com.example.mcpserver.tools.builtin;
 
 import com.example.mcpserver.tool.api.*;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.stereotype.Component;
 
@@ -81,7 +82,7 @@ public class GetCurrentTimeTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
+    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         try {
             String format = (String) arguments.getOrDefault("format", "readable");
             LocalDateTime now = LocalDateTime.now();

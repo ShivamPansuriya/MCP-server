@@ -3,6 +3,7 @@ package com.example.mcpserver.tools.builtin;
 import com.example.mcpserver.service.IncidentStorageService;
 import com.example.mcpserver.tool.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -199,7 +200,7 @@ public class UpdateIncidentTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
+    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         logger.info("Executing update_incident tool for session: {}", context.getSessionId());
 
         try {

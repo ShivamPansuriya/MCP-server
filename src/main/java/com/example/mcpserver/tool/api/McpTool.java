@@ -1,5 +1,6 @@
 package com.example.mcpserver.tool.api;
 
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import java.util.Map;
 
 /**
@@ -47,11 +48,12 @@ public interface McpTool {
     ValidationResult validate(Map<String, Object> arguments);
     
     /**
-     * Executes the tool with the provided context and arguments.
-     * 
+     * Executes the tool with the provided exchange, context and arguments.
+     *
+     * @param exchange the MCP server exchange for client interaction (elicitation, sampling, etc.)
      * @param context the execution context containing session and request information
      * @param arguments the tool arguments
      * @return the execution result
      */
-    ToolResult execute(ToolContext context, Map<String, Object> arguments);
+    ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments);
 }

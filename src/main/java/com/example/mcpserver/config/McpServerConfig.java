@@ -8,6 +8,8 @@ import com.example.mcpserver.tool.factory.ToolFactory;
 import com.example.mcpserver.tool.discovery.ToolDiscoveryService;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -103,7 +105,7 @@ public class McpServerConfig {
                     .inputSchema(toolDef.getMetadata().getSchema()).build();
 
             builder.toolCall(mcpTool,
-                    (exchange, request) -> executeToolViaRegistry(toolDef.getMetadata().getName(), request));
+                    (exchange, request) -> executeToolViaRegistry(exchange, toolDef.getMetadata().getName(), request));
 
             logger.debug("Registered tool: {}", toolDef.getMetadata().getName());
         }
@@ -115,11 +117,12 @@ public class McpServerConfig {
      * Executes a tool via the registry system.
      * This is a temporary implementation that will be replaced by ToolExecutionEngine in Phase 3.
      *
+     * @param exchange the MCP server exchange for client interaction
      * @param toolName the name of the tool to execute
      * @param request  the MCP tool call request
      * @return the tool call result
      */
-    private McpSchema.CallToolResult executeToolViaRegistry(String toolName,
+    private McpSchema.CallToolResult executeToolViaRegistry(McpSyncServerExchange exchange, String toolName,
             McpSchema.CallToolRequest request) {
         try {
             Optional<ToolDefinition> toolDef = toolRegistry.findByName(toolName);
@@ -145,8 +148,8 @@ public class McpServerConfig {
                         "Validation failed: " + validation.getFormattedErrors())), true);
             }
 
-            // Execute tool
-            ToolResult result = tool.execute(context, request.arguments());
+            // Execute tool with exchange
+            ToolResult result = tool.execute(exchange, context, request.arguments());
             toolDef.get().incrementExecutionCount();
 
             return new McpSchema.CallToolResult(result.getContent(), result.isError());
