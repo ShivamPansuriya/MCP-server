@@ -3,13 +3,16 @@ package com.example.mcpserver.tools.builtin;
 import com.example.mcpserver.service.IncidentStorageService;
 import com.example.mcpserver.tool.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,142 +110,132 @@ public class DeleteIncidentTool implements McpTool {
     }
 
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+    public Mono<ToolResult> execute(
+            McpAsyncServerExchange exchange,
+            ToolContext context,
+            Map<String, Object> arguments) {
+
         String sessionId = context != null ? context.getSessionId() : "unknown";
         logger.info("Executing delete_incident tool with context: {}", sessionId);
 
-        try {
-            String incidentId = arguments.get("incident_id").toString().trim();
-            logger.debug("Processing deletion request for incident '{}'", incidentId);
+        String incidentId = arguments.get("incident_id").toString().trim();
+        logger.debug("Processing deletion request for incident '{}'", incidentId);
 
-            // Check if incident exists
-            if (!incidentStorageService.incidentExists(incidentId)) {
-                logger.warn("Deletion failed: incident '{}' not found", incidentId);
-                Map<String, Object> errorResponse = Map.of(
-                    "message", "Incident not found",
-                    "incident_id", incidentId,
-                    "deleted", false
-                );
-                String responseJson = objectMapper.writeValueAsString(errorResponse);
-                return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
-            }
-
-            // Get incident details for confirmation
-            Map<String, Object> incident = incidentStorageService.getIncident(incidentId);
-
-            // Check if client supports elicitation
-            if (exchange.getClientCapabilities() == null || exchange.getClientCapabilities().elicitation() == null) {
-                logger.warn("Client does not support elicitation capabilities");
-                Map<String, Object> errorResponse = Map.of(
-                    "message", "Client does not support user confirmation. Cannot safely delete incident.",
-                    "incident_id", incidentId,
-                    "deleted", false
-                );
-                String responseJson = objectMapper.writeValueAsString(errorResponse);
-                return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
-            }
-
-            // Create elicitation request for user confirmation
-            String confirmationMessage = String.format(
-                "⚠️ DELETION CONFIRMATION REQUIRED ⚠️\n\n" +
-                "You are about to permanently delete incident: %s\n\n" +
-                "Incident Details:\n" +
-                "- ID: %s\n" +
-                "- Title: %s\n" +
-                "- Status: %s\n" +
-                "- Priority: %s\n" +
-                "- Created: %s\n\n" +
-                "⚠️ This action cannot be undone! ⚠️\n\n" +
-                "Do you want to proceed with the deletion?",
-                incidentId,
-                incident.get("id"),
-                incident.get("title"),
-                incident.get("status"),
-                incident.get("priority"),
-                incident.get("created_at")
-            );
-
-            // Create simple confirmation schema
-            Map<String, Object> confirmationSchema = new HashMap<>();
-            confirmationSchema.put("type", "object");
-            Map<String, Object> properties = new HashMap<>();
-            Map<String, Object> confirmProperty = new HashMap<>();
-            confirmProperty.put("type", "boolean");
-            confirmProperty.put("title", "Confirm Deletion");
-            confirmProperty.put("description", "Check this box to confirm you want to delete this incident");
-            confirmProperty.put("default", false);
-            properties.put("confirm", confirmProperty);
-            confirmationSchema.put("properties", properties);
-            confirmationSchema.put("required", List.of("confirm"));
-
-            McpSchema.ElicitRequest elicitRequest = McpSchema.ElicitRequest.builder()
-                .message(confirmationMessage)
-                .requestedSchema(confirmationSchema)
-                .build();
-
-            // Request user confirmation via elicitation
-            logger.info("Requesting user confirmation for deletion of incident '{}'", incidentId);
-            McpSchema.ElicitResult elicitResult = exchange.createElicitation(elicitRequest);
-
-            // Handle elicitation result
-            switch (elicitResult.action()) {
-                case ACCEPT:
-                    // User confirmed - check if they actually confirmed
-                    if (elicitResult.content() != null &&
-                        Boolean.TRUE.equals(elicitResult.content().get("confirm"))) {
-
-                        // Perform actual deletion
-                        Map<String, Object> deletedIncident = incidentStorageService.deleteIncident(incidentId);
-
-                        Map<String, Object> deletionResponse = Map.of(
-                            "message", "Incident successfully deleted",
-                            "deleted_incident", deletedIncident,
-                            "deleted", true
-                        );
-
-                        String responseJson = objectMapper.writeValueAsString(deletionResponse);
-                        logger.info("Successfully deleted incident '{}' after user confirmation", incidentId);
-                        return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
-                    } else {
-                        // User submitted but didn't confirm
-                        Map<String, Object> cancelResponse = Map.of(
-                            "message", "Deletion cancelled - confirmation checkbox was not checked",
-                            "incident_id", incidentId,
-                            "deleted", false
-                        );
-                        String responseJson = objectMapper.writeValueAsString(cancelResponse);
-                        logger.info("Deletion cancelled for incident '{}' - user did not confirm", incidentId);
-                        return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
+        return Mono.defer(() -> {
+                    // Check if incident exists first
+                    if (!incidentStorageService.incidentExists(incidentId)) {
+                        logger.warn("Deletion failed: incident '{}' not found", incidentId);
+                        try {
+                            Map<String, Object> errorResponse = Map.of(
+                                    "message", "Incident not found",
+                                    "incident_id", incidentId,
+                                    "deleted", false
+                            );
+                            String responseJson = objectMapper.writeValueAsString(errorResponse);
+                            return Mono.just(ToolResult.success(List.of(new McpSchema.TextContent(responseJson))));
+                        } catch (Exception e) {
+                            return Mono.error(new RuntimeException("Failed to process deletion request: " + e.getMessage(), e));
+                        }
                     }
 
-                case DECLINE:
-                    // User explicitly declined
-                    Map<String, Object> declineResponse = Map.of(
-                        "message", "Deletion declined by user",
-                        "incident_id", incidentId,
-                        "deleted", false
+                    // Incident exists, build elicitation request
+                    Map<String, Object> incident = incidentStorageService.getIncident(incidentId);
+                    String confirmationMessage = String.format(
+                            "⚠️ DELETION CONFIRMATION REQUIRED ⚠️\n\n" +
+                                    "You are about to permanently delete incident: %s\n\n" +
+                                    "Incident Details:\n" +
+                                    "- ID: %s\n" +
+                                    "- Title: %s\n" +
+                                    "- Status: %s\n" +
+                                    "- Priority: %s\n" +
+                                    "- Created: %s\n\n" +
+                                    "⚠️ This action cannot be undone! ⚠️\n\n" +
+                                    "Do you want to proceed with the deletion?",
+                            incidentId,
+                            incident.get("id"),
+                            incident.get("title"),
+                            incident.get("status"),
+                            incident.get("priority"),
+                            incident.get("created_at")
                     );
-                    String responseJson = objectMapper.writeValueAsString(declineResponse);
-                    logger.info("Deletion declined by user for incident '{}'", incidentId);
-                    return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
 
-                case CANCEL:
-                default:
-                    // User cancelled or dismissed
-                    Map<String, Object> cancelResponse = Map.of(
-                        "message", "Deletion cancelled by user",
-                        "incident_id", incidentId,
-                        "deleted", false
-                    );
-                    String cancelResponseJson = objectMapper.writeValueAsString(cancelResponse);
-                    logger.info("Deletion cancelled by user for incident '{}'", incidentId);
-                    return ToolResult.success(List.of(new McpSchema.TextContent(cancelResponseJson)));
-            }
+                    Map<String, Object> confirmationSchema = new HashMap<>();
+                    Map<String, Object> properties = new HashMap<>();
+                    Map<String, Object> confirmProperty = new HashMap<>();
+                    confirmProperty.put("type", "boolean");
+                    confirmProperty.put("title", "Confirm Deletion");
+                    confirmProperty.put("description", "Check this box to confirm you want to delete this incident");
+                    confirmProperty.put("default", false);
+                    properties.put("confirm", confirmProperty);
+                    confirmationSchema.put("type", "object");
+                    confirmationSchema.put("properties", properties);
+                    confirmationSchema.put("required", List.of("confirm"));
 
-        } catch (Exception e) {
-            logger.error("Failed to process deletion request for incident '{}': {}",
-                        arguments.get("incident_id"), e.getMessage(), e);
-            return ToolResult.error("Failed to process deletion request: " + e.getMessage());
-        }
+                    McpSchema.ElicitRequest elicitRequest = McpSchema.ElicitRequest.builder()
+                            .message(confirmationMessage)
+                            .requestedSchema(confirmationSchema)
+                            .build();
+
+                    // Ask for confirmation
+                    logger.info("Requesting user confirmation for deletion of incident '{}'", incidentId);
+                    return exchange.createElicitation(elicitRequest)
+                            .timeout(Duration.ofSeconds(30))
+                            .map(elicitResult -> {
+                                try {
+                                    switch (elicitResult.action()) {
+                                        case ACCEPT:
+                                            if (elicitResult.content() != null &&
+                                                    Boolean.TRUE.equals(elicitResult.content().get("confirm"))) {
+                                                // Perform deletion
+                                                Map<String, Object> deletedIncident = incidentStorageService.deleteIncident(incidentId);
+                                                Map<String, Object> deletionResponse = Map.of(
+                                                        "message", "Incident successfully deleted",
+                                                        "deleted_incident", deletedIncident,
+                                                        "deleted", true
+                                                );
+                                                String responseJson = objectMapper.writeValueAsString(deletionResponse);
+                                                logger.info("Successfully deleted incident '{}' after user confirmation", incidentId);
+                                                return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
+                                            } else {
+                                                Map<String, Object> cancelResponse = Map.of(
+                                                        "message", "Deletion cancelled - confirmation checkbox was not checked",
+                                                        "incident_id", incidentId,
+                                                        "deleted", false
+                                                );
+                                                String responseJson = objectMapper.writeValueAsString(cancelResponse);
+                                                logger.info("Deletion cancelled for incident '{}' - user did not confirm", incidentId);
+                                                return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
+                                            }
+
+                                        case DECLINE:
+                                            Map<String, Object> declineResponse = Map.of(
+                                                    "message", "Deletion declined by user",
+                                                    "incident_id", incidentId,
+                                                    "deleted", false
+                                            );
+                                            String declineResponseJson = objectMapper.writeValueAsString(declineResponse);
+                                            logger.info("Deletion declined by user for incident '{}'", incidentId);
+                                            return ToolResult.success(List.of(new McpSchema.TextContent(declineResponseJson)));
+
+                                        case CANCEL:
+                                        default:
+                                            Map<String, Object> cancelResponse = Map.of(
+                                                    "message", "Deletion cancelled by user",
+                                                    "incident_id", incidentId,
+                                                    "deleted", false
+                                            );
+                                            String cancelResponseJson = objectMapper.writeValueAsString(cancelResponse);
+                                            logger.info("Deletion cancelled by user for incident '{}'", incidentId);
+                                            return ToolResult.success(List.of(new McpSchema.TextContent(cancelResponseJson)));
+                                    }
+                                } catch (Exception e) {
+                                    throw new RuntimeException("Error processing deletion: " + e.getMessage(), e);
+                                }
+                            });
+                })
+                .doOnError(error -> logger.error("Failed to process deletion request for incident '{}': {}",
+                        arguments.get("incident_id"), error.getMessage(), error))
+                .onErrorResume(error -> Mono.just(
+                        ToolResult.error("Failed to process deletion request: " + error.getMessage())));
     }
 }

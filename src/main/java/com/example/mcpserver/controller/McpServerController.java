@@ -1,6 +1,6 @@
 package com.example.mcpserver.controller;
 
-import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpAsyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -15,11 +15,11 @@ import java.util.Map;
 @RestController
 public class McpServerController {
 
-    private final McpSyncServer mcpServer;
+    private final McpAsyncServer mcpServer;
     private final HttpServletStreamableServerTransportProvider transportProvider;
 
     @Autowired
-    public McpServerController(McpSyncServer mcpServer, HttpServletStreamableServerTransportProvider transportProvider) {
+    public McpServerController(McpAsyncServer mcpServer, HttpServletStreamableServerTransportProvider transportProvider) {
         this.mcpServer = mcpServer;
         this.transportProvider = transportProvider;
     }

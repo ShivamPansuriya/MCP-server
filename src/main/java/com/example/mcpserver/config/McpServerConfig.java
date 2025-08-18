@@ -7,9 +7,9 @@ import com.example.mcpserver.tool.registry.ToolRegistry;
 import com.example.mcpserver.tool.factory.ToolFactory;
 import com.example.mcpserver.tool.discovery.ToolDiscoveryService;
 import io.modelcontextprotocol.server.McpServer;
-import io.modelcontextprotocol.server.McpSyncServer;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServer;
 import io.modelcontextprotocol.server.McpAsyncServerExchange;
+import reactor.core.publisher.Mono;
 
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -19,6 +19,7 @@ import org.springframework.context.annotation.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -78,19 +79,19 @@ public class McpServerConfig {
     }
 
     /**
-     * Creates the MCP server instance with the configured transport provider.
+     * Creates the MCP async server instance with the configured transport provider.
      * This server will handle MCP protocol messages and route them to appropriate handlers.
      * Uses the tool registry system for dynamic tool registration.
      *
      * @param transportProvider The configured transport provider
-     * @return Configured MCP server
+     * @return Configured MCP async server
      */
     @Bean
-    public McpSyncServer mcpServer(HttpServletStreamableServerTransportProvider transportProvider) {
+    public McpAsyncServer mcpServer(HttpServletStreamableServerTransportProvider transportProvider) {
         // Ensure tools are discovered before creating the server
         // The ToolDiscoveryService dependency ensures @PostConstruct has run
 
-        var builder = McpServer.sync(transportProvider).serverInfo("Example MCP Server", "1.0.0")
+        var builder = McpServer.async(transportProvider).serverInfo("Example MCP Server", "1.0.0")
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).prompts(true).logging()
                         .resources(true, true).build());
 
@@ -99,66 +100,68 @@ public class McpServerConfig {
         logger.info("Registering {} enabled tools from registry", enabledTools.size());
 
         for (ToolDefinition toolDef : enabledTools) {
-            McpSchema.Tool mcpTool = McpSchema.Tool.builder()
-                    .name(toolDef.getMetadata().getName())
+            McpSchema.Tool mcpTool = McpSchema.Tool.builder().name(toolDef.getMetadata().getName())
                     .description(toolDef.getMetadata().getDescription())
                     .inputSchema(toolDef.getMetadata().getSchema()).build();
 
             builder.toolCall(mcpTool,
-                    (exchange, request) -> executeToolViaRegistry(exchange, toolDef.getMetadata().getName(), request));
+                    (exchange, request) -> executeToolViaRegistry(exchange, toolDef.getMetadata().getName(),
+                            request));
 
             logger.debug("Registered tool: {}", toolDef.getMetadata().getName());
         }
 
+        builder.requestTimeout(Duration.ofSeconds(40));
         return builder.build();
     }
 
     /**
-     * Executes a tool via the registry system.
-     * This is a temporary implementation that will be replaced by ToolExecutionEngine in Phase 3.
+     * Executes a tool via the registry system asynchronously.
+     * This implementation uses reactive patterns for non-blocking tool execution.
      *
-     * @param exchange the MCP server exchange for client interaction
+     * @param exchange the MCP async server exchange for client interaction
      * @param toolName the name of the tool to execute
      * @param request  the MCP tool call request
-     * @return the tool call result
+     * @return the tool call result wrapped in a Mono
      */
-    private McpSchema.CallToolResult executeToolViaRegistry(McpSyncServerExchange exchange, String toolName,
-            McpSchema.CallToolRequest request) {
-        try {
-            Optional<ToolDefinition> toolDef = toolRegistry.findByName(toolName);
-            if (toolDef.isEmpty()) {
-                logger.warn("Tool not found in registry: {}", toolName);
-                return new McpSchema.CallToolResult(
-                        List.of(new McpSchema.TextContent("Tool not found: " + toolName)), true);
-            }
+    private Mono<McpSchema.CallToolResult> executeToolViaRegistry(McpAsyncServerExchange exchange,
+            String toolName, McpSchema.CallToolRequest request) {
+        return Mono.defer(() -> {
+                    // Find tool definition
+                    ToolDefinition toolDef = toolRegistry.findByName(toolName).orElseThrow(() -> {
+                        logger.warn("Tool not found in registry: {}", toolName);
+                        return new IllegalArgumentException("Tool not found: " + toolName);
+                    });
 
-            // Create tool instance using factory
-            McpTool tool = toolFactory.createTool(toolDef.get());
+                    // Create tool instance using factory
+                    McpTool tool = toolFactory.createTool(toolDef);
 
-            // Create execution context
-            ToolContext context =
-                    ToolContext.builder().sessionId(extractSessionId(request)).requestId(generateRequestId())
-                            .build();
+                    // Create execution context
+                    ToolContext context =
+                            ToolContext.builder().sessionId(extractSessionId(request)).requestId(generateRequestId())
+                                    .build();
 
-            // Validate arguments
-            ValidationResult validation = tool.validate(request.arguments());
-            if (!validation.isValid()) {
-                logger.warn("Tool validation failed for {}: {}", toolName, validation.getFormattedErrors());
-                return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(
-                        "Validation failed: " + validation.getFormattedErrors())), true);
-            }
+                    // Validate arguments
+                    ValidationResult validation = tool.validate(request.arguments());
+                    if (!validation.isValid()) {
+                        logger.warn("Tool validation failed for {}: {}", toolName, validation.getFormattedErrors());
+                        throw new IllegalArgumentException("Validation failed: " + validation.getFormattedErrors());
+                    }
 
-            // Execute tool with exchange
-            ToolResult result = tool.execute(exchange, context, request.arguments());
-            toolDef.get().incrementExecutionCount();
-
-            return new McpSchema.CallToolResult(result.getContent(), result.isError());
-
-        } catch (Exception e) {
-            logger.error("Error executing tool {}: {}", toolName, e.getMessage(), e);
-            return new McpSchema.CallToolResult(
-                    List.of(new McpSchema.TextContent("Execution failed: " + e.getMessage())), true);
-        }
+                    // Execute tool asynchronously using the new async interface
+                    return tool.execute(exchange, context, request.arguments())
+                            .doOnSuccess(result -> toolDef.incrementExecutionCount())
+                            .map(result -> new McpSchema.CallToolResult(result.getContent(), result.isError()));
+                }).doOnError(
+                        error -> logger.error("Error executing tool {}: {}", toolName, error.getMessage(), error))
+                .onErrorResume(error -> {
+                    String errorMessage = error instanceof IllegalArgumentException ?
+                            error.getMessage() :
+                            "Execution failed: " + error.getMessage();
+                    return Mono.just(
+                            new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(errorMessage)),
+                                    true));
+                });
     }
 
     /**

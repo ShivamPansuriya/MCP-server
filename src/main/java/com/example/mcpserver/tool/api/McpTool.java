@@ -1,6 +1,7 @@
 package com.example.mcpserver.tool.api;
 
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
+import reactor.core.publisher.Mono;
 import java.util.Map;
 
 /**
@@ -48,12 +49,12 @@ public interface McpTool {
     ValidationResult validate(Map<String, Object> arguments);
     
     /**
-     * Executes the tool with the provided exchange, context and arguments.
+     * Executes the tool asynchronously with the provided exchange, context and arguments.
      *
-     * @param exchange the MCP server exchange for client interaction (elicitation, sampling, etc.)
+     * @param exchange the MCP async server exchange for client interaction (elicitation, sampling, etc.)
      * @param context the execution context containing session and request information
      * @param arguments the tool arguments
-     * @return the execution result
+     * @return the execution result wrapped in a Mono for reactive processing
      */
-    ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments);
+    Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments);
 }

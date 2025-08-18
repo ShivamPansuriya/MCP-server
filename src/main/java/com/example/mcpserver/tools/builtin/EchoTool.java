@@ -1,9 +1,10 @@
 package com.example.mcpserver.tools.builtin;
 
 import com.example.mcpserver.tool.api.*;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
@@ -81,19 +82,22 @@ public class EchoTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
-        try {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+        return Mono.fromCallable(() -> {
             String text = (String) arguments.get("text");
-            
+
             if (text == null) {
-                return ToolResult.error("'text' parameter is required");
+                throw new IllegalArgumentException("'text' parameter is required");
             }
-            
+
             return ToolResult.success(
                 List.of(new McpSchema.TextContent("Echo: " + text))
             );
-        } catch (Exception e) {
-            return ToolResult.error("Failed to echo text: " + e.getMessage());
-        }
+        })
+        .onErrorResume(error -> {
+            String errorMessage = error instanceof IllegalArgumentException ?
+                    error.getMessage() : "Failed to echo text: " + error.getMessage();
+            return Mono.just(ToolResult.error(errorMessage));
+        });
     }
 }

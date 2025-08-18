@@ -3,12 +3,13 @@ package com.example.mcpserver.tools.builtin;
 import com.example.mcpserver.service.IncidentStorageService;
 import com.example.mcpserver.tool.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
@@ -200,10 +201,10 @@ public class UpdateIncidentTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         logger.info("Executing update_incident tool for session: {}", context.getSessionId());
 
-        try {
+        return Mono.fromCallable(() -> {
             String incidentId = arguments.get("incident_id").toString().trim();
 
             @SuppressWarnings("unchecked")
@@ -221,7 +222,7 @@ public class UpdateIncidentTool implements McpTool {
                 String responseJson = objectMapper.writeValueAsString(errorResponse);
                 return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
             }
-            
+
             // Update the incident
             Map<String, Object> updatedIncident = incidentStorageService.updateIncident(incidentId, updates);
 
@@ -238,10 +239,8 @@ public class UpdateIncidentTool implements McpTool {
             return ToolResult.success(
                 List.of(new McpSchema.TextContent(responseJson))
             );
-
-        } catch (Exception e) {
-            logger.error("Failed to update incident '{}': {}", arguments.get("incident_id"), e.getMessage(), e);
-            return ToolResult.error("Failed to update incident: " + e.getMessage());
-        }
+        })
+        .doOnError(error -> logger.error("Failed to update incident '{}': {}", arguments.get("incident_id"), error.getMessage(), error))
+        .onErrorResume(error -> Mono.just(ToolResult.error("Failed to update incident: " + error.getMessage())));
     }
 }

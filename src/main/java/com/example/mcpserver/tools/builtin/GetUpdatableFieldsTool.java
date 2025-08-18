@@ -2,12 +2,13 @@ package com.example.mcpserver.tools.builtin;
 
 import com.example.mcpserver.tool.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
@@ -71,10 +72,10 @@ public class GetUpdatableFieldsTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         logger.info("Executing get_updatable_fields tool for session: {}", context.getSessionId());
 
-        try {
+        return Mono.fromCallable(() -> {
             // Define updatable fields with their metadata
             List<Map<String, String>> updatableFields = List.of(
                 Map.of(
@@ -98,7 +99,7 @@ public class GetUpdatableFieldsTool implements McpTool {
                     "description", "Status of the incident: Open, In Progress, Resolved, Closed."
                 )
             );
-            
+
             // Format response
             Map<String, Object> response = Map.of("updatable_fields", updatableFields);
             String responseJson = objectMapper.writeValueAsString(response);
@@ -109,10 +110,8 @@ public class GetUpdatableFieldsTool implements McpTool {
             return ToolResult.success(
                 List.of(new McpSchema.TextContent(responseJson))
             );
-
-        } catch (Exception e) {
-            logger.error("Failed to get updatable fields: {}", e.getMessage(), e);
-            return ToolResult.error("Failed to get updatable fields: " + e.getMessage());
-        }
+        })
+        .doOnError(error -> logger.error("Failed to get updatable fields: {}", error.getMessage(), error))
+        .onErrorResume(error -> Mono.just(ToolResult.error("Failed to get updatable fields: " + error.getMessage())));
     }
 }

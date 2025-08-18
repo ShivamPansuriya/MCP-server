@@ -1,6 +1,6 @@
 package com.example.mcpserver;
 
-import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.McpAsyncServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,7 +23,7 @@ class McpServerApplicationTests {
     private TestRestTemplate restTemplate;
 
     @Autowired
-    private McpSyncServer mcpServer;
+    private McpAsyncServer mcpServer;
 
     @Test
     void contextLoads() {

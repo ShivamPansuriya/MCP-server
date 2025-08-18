@@ -3,12 +3,13 @@ package com.example.mcpserver.tools.builtin;
 import com.example.mcpserver.service.IncidentStorageService;
 import com.example.mcpserver.tool.api.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
@@ -152,10 +153,10 @@ public class CreateIncidentTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         logger.info("Executing create_incident tool for session: {}", context.getSessionId());
 
-        try {
+        return Mono.fromCallable(() -> {
             // Extract parameters
             String title = arguments.get("title").toString().trim();
             String requester = arguments.get("requester").toString().trim();
@@ -171,7 +172,7 @@ public class CreateIncidentTool implements McpTool {
             String incidentId = (String) incident.get("incident_id");
 
             logger.info("Successfully created incident with ID: {}", incidentId);
-            
+
             // Format response
             String responseMessage = String.format("Incident created successfully");
             String responseJson = objectMapper.writeValueAsString(Map.of(
@@ -184,15 +185,13 @@ public class CreateIncidentTool implements McpTool {
                 "status", incident.get("status"),
                 "created_at", incident.get("created_at")
             ));
-            
+
             logger.debug("Returning successful response for incident: {}", incidentId);
             return ToolResult.success(
                 List.of(new McpSchema.TextContent(responseJson))
             );
-
-        } catch (Exception e) {
-            logger.error("Failed to create incident: {}", e.getMessage(), e);
-            return ToolResult.error("Failed to create incident: " + e.getMessage());
-        }
+        })
+        .doOnError(error -> logger.error("Failed to create incident: {}", error.getMessage(), error))
+        .onErrorResume(error -> Mono.just(ToolResult.error("Failed to create incident: " + error.getMessage())));
     }
 }

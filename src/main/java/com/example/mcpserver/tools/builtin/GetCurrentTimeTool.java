@@ -1,9 +1,10 @@
 package com.example.mcpserver.tools.builtin;
 
 import com.example.mcpserver.tool.api.*;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.server.McpAsyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -82,23 +83,22 @@ public class GetCurrentTimeTool implements McpTool {
     }
     
     @Override
-    public ToolResult execute(McpSyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
-        try {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+        return Mono.fromCallable(() -> {
             String format = (String) arguments.getOrDefault("format", "readable");
             LocalDateTime now = LocalDateTime.now();
             String timeString;
-            
+
             if ("iso".equals(format)) {
                 timeString = now.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
             } else {
                 timeString = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
             }
-            
+
             return ToolResult.success(
                 List.of(new McpSchema.TextContent("Current time: " + timeString))
             );
-        } catch (Exception e) {
-            return ToolResult.error("Failed to get current time: " + e.getMessage());
-        }
+        })
+        .onErrorResume(error -> Mono.just(ToolResult.error("Failed to get current time: " + error.getMessage())));
     }
 }
