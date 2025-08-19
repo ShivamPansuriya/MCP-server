@@ -14,8 +14,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tool that returns metadata about which incident fields can be updated.
- * Provides field information including type and description for each updatable field.
+ * Tool that returns structured metadata about incident fields that can be updated.
+ * Provides detailed field information in SCIM-like format including type, mutability,
+ * constraints, and validation rules. This tool should be called first to understand
+ * the available fields before using update_incident.
  */
 @Component
 public class GetUpdatableFieldsTool implements McpTool {
@@ -45,7 +47,7 @@ public class GetUpdatableFieldsTool implements McpTool {
     
     @Override
     public String getDescription() {
-        return "Return the list of fields that can be updated for an incident, including their type and description";
+        return "Return structured metadata about incident fields that can be updated, including type, mutability, constraints, and validation rules in SCIM-like format";
     }
     
     @Override
@@ -76,35 +78,59 @@ public class GetUpdatableFieldsTool implements McpTool {
         logger.info("Executing get_updatable_fields tool for session: {}", context.getSessionId());
 
         return Mono.fromCallable(() -> {
-            // Define updatable fields with their metadata
-            List<Map<String, String>> updatableFields = List.of(
+            // Define updatable fields with SCIM-like structured metadata
+            List<Map<String, Object>> updatableFields = List.of(
                 Map.of(
-                    "field_name", "title",
-                    "field_type", "string",
-                    "description", "Short title of the incident."
+                    "name", "title",
+                    "type", "string",
+                    "mutability", "readWrite",
+                    "returned", "default",
+                    "required", false,
+                    "multiValued", false,
+                    "caseExact", false,
+                    "description", "Short title of the incident",
+                    "maxLength", 200
                 ),
                 Map.of(
-                    "field_name", "description",
-                    "field_type", "string",
-                    "description", "Detailed description of the incident."
+                    "name", "description",
+                    "type", "string",
+                    "mutability", "readWrite",
+                    "returned", "default",
+                    "required", false,
+                    "multiValued", false,
+                    "caseExact", false,
+                    "description", "Detailed description of the incident",
+                    "maxLength", 4000
                 ),
                 Map.of(
-                    "field_name", "priority",
-                    "field_type", "string",
-                    "description", "Priority level: Low, Medium, High, Critical."
+                    "name", "priority",
+                    "type", "string",
+                    "mutability", "readWrite",
+                    "returned", "default",
+                    "required", false,
+                    "multiValued", false,
+                    "caseExact", false,
+                    "description", "Priority level of the incident",
+                    "canonicalValues", List.of("Low", "Medium", "High", "Critical")
                 ),
                 Map.of(
-                    "field_name", "status",
-                    "field_type", "string",
-                    "description", "Status of the incident: Open, In Progress, Resolved, Closed."
+                    "name", "status",
+                    "type", "string",
+                    "mutability", "readWrite",
+                    "returned", "default",
+                    "required", false,
+                    "multiValued", false,
+                    "caseExact", false,
+                    "description", "Status of the incident",
+                    "canonicalValues", List.of("Open", "In Progress", "Resolved", "Closed")
                 )
             );
 
-            // Format response
-            Map<String, Object> response = Map.of("updatable_fields", updatableFields);
+            // Format response with structured attributes
+            Map<String, Object> response = Map.of("attributes", updatableFields);
             String responseJson = objectMapper.writeValueAsString(response);
 
-            logger.info("Successfully returned {} updatable fields", updatableFields.size());
+            logger.info("Successfully returned {} updatable field attributes", updatableFields.size());
             logger.debug("Updatable fields response: {}", responseJson);
 
             return ToolResult.success(
