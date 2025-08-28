@@ -22,8 +22,7 @@ public class IncidentStorageService {
     // Constants for incident management
     public static final Set<String> VALID_PRIORITIES = Set.of("Low", "Medium", "High", "Critical");
     public static final Set<String> VALID_STATUSES = Set.of("Open", "In Progress", "Resolved", "Closed");
-    public static final Set<String> UPDATABLE_FIELDS = Set.of("title", "description", "priority", "status");
-    
+
     /**
      * Generates a unique incident ID in the format INC-{8-char-hex}.
      *
@@ -66,7 +65,43 @@ public class IncidentStorageService {
 
         return new HashMap<>(incident); // Return a copy
     }
-    
+
+    /**
+     * Creates a new incident with flexible field data.
+     * This method accepts any field data and creates an incident with those fields.
+     *
+     * @param fieldData map of field names to values
+     * @return the created incident data
+     */
+    public Map<String, Object> createIncidentWithFields(Map<String, Object> fieldData) {
+        logger.info("Creating new incident with flexible field data: {}", fieldData.keySet());
+
+        String incidentId = generateIncidentId();
+        String createdAt = Instant.now().toString();
+
+        Map<String, Object> incident = new HashMap<>();
+        incident.put("incident_id", incidentId);
+        incident.put("created_at", createdAt);
+        incident.put("status", "Open"); // Default status
+
+        // Add all provided field data
+        if (fieldData != null) {
+            for (Map.Entry<String, Object> entry : fieldData.entrySet()) {
+                String fieldName = entry.getKey();
+                Object fieldValue = entry.getValue();
+                incident.put(fieldName, fieldValue);
+                logger.debug("Added field '{}': '{}'", fieldName, fieldValue);
+            }
+        }
+
+        incidents.put(incidentId, incident);
+        logger.info("Successfully created incident: {} with {} fields (total incidents: {})",
+                   incidentId, fieldData != null ? fieldData.size() : 0, incidents.size());
+        logger.debug("Incident details: {}", incident);
+
+        return new HashMap<>(incident); // Return a copy
+    }
+
     /**
      * Retrieves an incident by ID.
      *
@@ -108,12 +143,10 @@ public class IncidentStorageService {
             String field = entry.getKey();
             Object value = entry.getValue();
 
-            if (UPDATABLE_FIELDS.contains(field) && value != null) {
-                String oldValue = (String) incident.get(field);
-                incident.put(field, value.toString());
-                logger.debug("Updated field '{}': '{}' -> '{}'", field, oldValue, value.toString());
-                updatedFieldCount++;
-            }
+            String oldValue = (String) incident.get(field);
+            incident.put(field, value.toString());
+            logger.debug("Updated field '{}': '{}' -> '{}'", field, oldValue, value.toString());
+            updatedFieldCount++;
         }
 
         logger.info("Successfully updated incident: {} ({} fields changed)", incidentId, updatedFieldCount);

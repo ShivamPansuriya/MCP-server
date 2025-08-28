@@ -13,9 +13,13 @@ import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Tool for creating new incident requests.
+ * IMPORTANT: Before using this tool, first call the 'get_fields_schema' tool with model="request"
+ * to fetch the complete field schema and understand all available fields, their types,
+ * validation rules, and required status.
  * Creates incidents with proper field validation and unique ID generation.
  */
 @Component
@@ -30,31 +34,36 @@ public class CreateIncidentTool implements McpTool {
         {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
+            "description": "Create a new incident request. IMPORTANT: First call 'get_fields_schema' tool with model='request' to get complete field schema and use exact field names from that response.",
             "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Short title of the incident. Mandatory.",
-                    "minLength": 1,
-                    "maxLength": 200
-                },
-                "requester": {
-                    "type": "string",
-                    "description": "Name or email of the person raising the incident. Mandatory.",
-                    "minLength": 1,
-                    "maxLength": 200
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Detailed description of the issue. Optional.",
-                    "maxLength": 4000
-                },
-                "priority": {
-                    "type": "string",
-                    "description": "Priority level of the incident. Options: Low, Medium, High, Critical.",
-                    "enum": ["Low", "Medium", "High", "Critical"]
+                "incident_data": {
+                    "type": "object",
+                    "description": "Object containing incident field data with field names as keys and field values as values. Use exact field names from get_fields_schema tool response. make sure that all the required fields are present in the object.",
+                    "additionalProperties": true
                 }
             },
-            "required": ["title", "requester"]
+            "required": ["incident_data"],
+            "examples": [
+                {
+                    "incident_data": {
+                        "Subject": "Database connectivity issue",
+                        "Requester": "john.doe@company.com",
+                        "Description": "Users unable to connect to main database server",
+                        "Priority": "High",
+                        "Department": "IT"
+                    }
+                },
+                {
+                    "incident_data": {
+                        "Subject": "Printer not working",
+                        "Requester": "jane.smith@company.com",
+                        "Description": "Office printer on 2nd floor is not responding",
+                        "Priority": "Medium",
+                        "Department": "Administration",
+                        "Cc Emails": ["admin@company.com"]
+                    }
+                }
+            ]
         }
         """;
     
@@ -71,7 +80,7 @@ public class CreateIncidentTool implements McpTool {
     
     @Override
     public String getDescription() {
-        return "Create an incident request with proper field schema";
+        return "Create a new incident request. IMPORTANT: First call 'get_fields_schema' tool with model='request' to fetch complete field details including field names, types, validation rules, and required status. Then use this tool with the exact field names and properly formatted values from the get_fields_schema response.";
     }
     
     @Override
@@ -85,7 +94,7 @@ public class CreateIncidentTool implements McpTool {
                 .name(getName())
                 .description(getDescription())
                 .version("1.0.0")
-                .category("incident-management")
+                .category("request-management")
                 .schema(getSchema())
                 .build();
     }
@@ -94,96 +103,103 @@ public class CreateIncidentTool implements McpTool {
     public ValidationResult validate(Map<String, Object> arguments) {
         logger.debug("Validating create_incident arguments: {}", arguments.keySet());
 
-        // Check required fields
-        if (!arguments.containsKey("title") || arguments.get("title") == null) {
-            logger.warn("Validation failed: missing 'title' parameter");
-            return ValidationResult.failure("'title' parameter is required");
+        if (arguments == null || arguments.isEmpty()) {
+            logger.warn("Validation failed: no arguments provided");
+            return ValidationResult.failure("Arguments are required. First call 'get_fields_schema' tool with model='request' to get field schema.");
         }
 
-        if (!arguments.containsKey("requester") || arguments.get("requester") == null) {
-            logger.warn("Validation failed: missing 'requester' parameter");
-            return ValidationResult.failure("'requester' parameter is required");
-        }
-        
-        String title = arguments.get("title").toString().trim();
-        String requester = arguments.get("requester").toString().trim();
-        
-        if (title.isEmpty()) {
-            logger.warn("Validation failed: empty 'title' parameter");
-            return ValidationResult.failure("'title' cannot be empty");
+        // Check for incident_data parameter
+        if (!arguments.containsKey("incident_data") || arguments.get("incident_data") == null) {
+            logger.warn("Validation failed: missing 'incident_data' parameter");
+            return ValidationResult.failure("'incident_data' parameter is required. This should contain all field data from get_fields_schema response.");
         }
 
-        if (requester.isEmpty()) {
-            logger.warn("Validation failed: empty 'requester' parameter");
-            return ValidationResult.failure("'requester' cannot be empty");
+        Object incidentDataObj = arguments.get("incident_data");
+        if (!(incidentDataObj instanceof Map)) {
+            logger.warn("Validation failed: 'incident_data' must be an object");
+            return ValidationResult.failure("'incident_data' must be an object containing field names and values.");
         }
 
-        // Validate title length
-        if (title.length() > 200) {
-            logger.warn("Validation failed: 'title' length {} exceeds 200 characters", title.length());
-            return ValidationResult.failure("'title' cannot exceed 200 characters");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> incidentData = (Map<String, Object>) incidentDataObj;
+
+        if (incidentData.isEmpty()) {
+            logger.warn("Validation failed: 'incident_data' is empty");
+            return ValidationResult.failure("'incident_data' cannot be empty. Include field data from get_fields_schema response.");
         }
 
-        // Validate requester length
-        if (requester.length() > 100) {
-            logger.warn("Validation failed: 'requester' length {} exceeds 100 characters", requester.length());
-            return ValidationResult.failure("'requester' cannot exceed 100 characters");
-        }
-        
-        // Validate description length if provided
-        if (arguments.containsKey("description") && arguments.get("description") != null) {
-            String description = arguments.get("description").toString();
-            if (description.length() > 2000) {
-                logger.warn("Validation failed: 'description' length {} exceeds 2000 characters", description.length());
-                return ValidationResult.failure("'description' cannot exceed 2000 characters");
-            }
+        // Validate required fields
+        ValidationResult requiredFieldsValidation = validateRequiredFields(incidentData);
+        if (!requiredFieldsValidation.isValid()) {
+            return requiredFieldsValidation;
         }
 
-        // Validate priority if provided
-        if (arguments.containsKey("priority") && arguments.get("priority") != null) {
-            String priority = arguments.get("priority").toString();
-            if (!incidentStorageService.isValidPriority(priority)) {
-                logger.warn("Validation failed: invalid priority '{}'. Valid priorities: {}", priority, IncidentStorageService.VALID_PRIORITIES);
-                return ValidationResult.failure("'priority' must be one of: Low, Medium, High, Critical");
-            }
-        }
-
-        logger.debug("Validation successful for create_incident with title: '{}'", title);
+        logger.debug("Validation successful for create_incident with {} fields in incident_data", incidentData.size());
         return ValidationResult.success();
     }
-    
+
+    /**
+     * Validates that all required fields are present in the incident data.
+     *
+     * @param incidentData the incident data to validate
+     * @return ValidationResult indicating success or failure with missing required fields
+     */
+    private ValidationResult validateRequiredFields(Map<String, Object> incidentData) {
+        logger.debug("Validating required fields for incident creation");
+
+        // Get required fields from FieldConstants
+        List<String> requiredFields = FieldConstants.UPDATABLE_FIELDS.stream()
+                .filter(field -> Boolean.TRUE.equals(field.get("required")))
+                .map(field -> (String) field.get("name"))
+                .collect(Collectors.toList());
+
+        logger.debug("Required fields for request model: {}", requiredFields);
+
+        // Check for missing required fields
+        List<String> missingFields = requiredFields.stream()
+                .filter(fieldName -> !incidentData.containsKey(fieldName) ||
+                                   incidentData.get(fieldName) == null ||
+                                   (incidentData.get(fieldName) instanceof String &&
+                                    ((String) incidentData.get(fieldName)).trim().isEmpty()))
+                .collect(Collectors.toList());
+
+        if (!missingFields.isEmpty()) {
+            String errorMessage = String.format(
+                "Missing required fields: %s. Please provide values for all required fields. " +
+                "Call 'get_fields_schema' tool with model='request' to see all required fields.",
+                String.join(", ", missingFields)
+            );
+            logger.warn("Validation failed: {}", errorMessage);
+            return ValidationResult.failure(errorMessage);
+        }
+
+        logger.debug("All required fields are present");
+        return ValidationResult.success();
+    }
+
     @Override
     public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
         logger.info("Executing create_incident tool for session: {}", context.getSessionId());
 
         return Mono.fromCallable(() -> {
-            // Extract parameters
-            String title = arguments.get("title").toString().trim();
-            String requester = arguments.get("requester").toString().trim();
-            String description = arguments.containsKey("description") && arguments.get("description") != null
-                ? arguments.get("description").toString() : "";
-            String priority = arguments.containsKey("priority") && arguments.get("priority") != null
-                ? arguments.get("priority").toString() : "Medium";
+            // Extract incident_data from arguments
+            @SuppressWarnings("unchecked")
+            Map<String, Object> incidentData = (Map<String, Object>) arguments.get("incident_data");
 
-            logger.debug("Creating incident with title: '{}', requester: '{}', priority: '{}'", title, requester, priority);
+            logger.debug("Creating incident with field data: {}", incidentData.keySet());
 
-            // Create incident
-            Map<String, Object> incident = incidentStorageService.createIncident(title, requester, description, priority);
+            // Create incident with the extracted field data
+            Map<String, Object> incident = incidentStorageService.createIncidentWithFields(incidentData);
             String incidentId = (String) incident.get("incident_id");
 
             logger.info("Successfully created incident with ID: {}", incidentId);
 
-            // Format response
-            String responseMessage = String.format("Incident created successfully");
+            // Format response with all created incident data
+            String responseMessage = "Incident created successfully with provided field data";
             String responseJson = objectMapper.writeValueAsString(Map.of(
                 "message", responseMessage,
-                "incident_id", incident.get("incident_id"),
-                "title", incident.get("title"),
-                "requester", incident.get("requester"),
-                "description", incident.get("description"),
-                "priority", incident.get("priority"),
-                "status", incident.get("status"),
-                "created_at", incident.get("created_at")
+                "incident_id", incidentId,
+                "incident", incident
             ));
 
             logger.debug("Returning successful response for incident: {}", incidentId);

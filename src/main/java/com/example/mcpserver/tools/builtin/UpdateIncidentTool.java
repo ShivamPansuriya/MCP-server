@@ -17,7 +17,7 @@ import java.util.Map;
 /**
  * Tool for performing partial updates (PATCH operations) on existing incidents.
  * Accepts incident ID and a dynamic updates object containing only the fields to be modified.
- * Use get_updatable_incident_fields first to understand available fields and their constraints.
+ * Use get_fields_schema first to understand available fields and their constraints.
  */
 @Component
 public class UpdateIncidentTool implements McpTool {
@@ -41,35 +41,7 @@ public class UpdateIncidentTool implements McpTool {
                     },
                     "field_updates": {
                         "type": "object",
-                        "description": "Object containing only the fields to be updated and their new values. Do not include fields that should remain unchanged. Use get_updatable_incident_fields to see available fields and their validation rules.",
-                        "properties": {
-                            "title": {
-                                "type": "string",
-                                "description": "New title for the incident",
-                                "maxLength": 200,
-                                "minLength": 1,
-                                "examples": ["Database connection timeout", "User authentication failure"]
-                            },
-                            "description": {
-                                "type": "string",
-                                "description": "New detailed description of the incident",
-                                "maxLength": 4000,
-                                "minLength": 1,
-                                "examples": ["Users experiencing timeout errors when connecting to database"]
-                            },
-                            "priority": {
-                                "type": "string",
-                                "description": "New priority level - must be exact case match",
-                                "enum": ["Low", "Medium", "High", "Critical"],
-                                "examples": ["High", "Critical"]
-                            },
-                            "status": {
-                                "type": "string",
-                                "description": "New status - must be exact case match",
-                                "enum": ["Open", "In Progress", "Resolved", "Closed"],
-                                "examples": ["In Progress", "Resolved"]
-                            }
-                        },
+                        "description": "Object containing only the fields to be updated and their new values. Do not include fields that should remain unchanged. Use get_fields_schema tool first to see available fields and their validation rules. Object containing incident field data with field names as keys and field values as values. Use exact field names from get_fields_schema tool response.",
                         "additionalProperties": false,
                         "minProperties": 1,
                         "examples": [
