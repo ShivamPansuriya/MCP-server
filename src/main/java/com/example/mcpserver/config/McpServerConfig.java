@@ -115,7 +115,7 @@ public class McpServerConfig {
         // TODO: Add resource handlers when MCP SDK API is clarified
         // For now, field schema will be available through tools
         McpSchema.Resource resource = McpSchema.Resource.builder().name("field://schema")
-                .description("Field schema data").build();
+                .description("Field schema data").uri("field://schema").build();
         builder.resources(new McpServerFeatures.AsyncResourceSpecification(resource, (exchange, request) -> {
             return Mono.empty();
         }));
