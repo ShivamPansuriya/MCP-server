@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    
+    <!-- Define properties for log file configuration -->
+    <property name="LOG_FILE" value="logs/application.log"/>
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss} - %msg%n"/>
+    <property name="CONSOLE_LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"/>
+    
+    <!-- Console Appender - maintains existing console output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Rolling File Appender - writes to log file with rolling policy -->
+    <appender name="ROLLING_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        
+        <!-- Rolling Policy: Size-based with compression -->
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- Pattern for backup files: application_2024-01-15_1.gz -->
+            <fileNamePattern>logs/application_%d{yyyy-MM-dd}_%i.gz</fileNamePattern>
+            
+            <!-- Maximum file size before rolling -->
+            <maxFileSize>10MB</maxFileSize>
+            
+            <!-- Maximum number of backup files to keep (30 days) -->
+            <maxHistory>30</maxHistory>
+            
+            <!-- Total size cap for all log files -->
+            <totalSizeCap>1GB</totalSizeCap>
+            
+            <!-- Clean up old files on startup -->
+            <cleanHistoryOnStart>true</cleanHistoryOnStart>
+        </rollingPolicy>
+        
+        <!-- Encoder for file output -->
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Async File Appender for better performance -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="ROLLING_FILE"/>
+        <!-- Queue size for async logging -->
+        <queueSize>512</queueSize>
+        <!-- Don't discard events on queue full -->
+        <discardingThreshold>0</discardingThreshold>
+        <!-- Include caller data for better debugging -->
+        <includeCallerData>false</includeCallerData>
+    </appender>
+    
+    <!-- Logger for MCP Server specific packages -->
+    <logger name="com.example.mcpserver" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+    
+    <!-- Logger for MCP SDK -->
+    <logger name="io.modelcontextprotocol" level="DEBUG" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+    
+    <!-- Logger for Spring Framework (INFO level to reduce noise) -->
+    <logger name="org.springframework" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+    
+    <!-- Logger for Hibernate/JPA (if used) -->
+    <logger name="org.hibernate" level="WARN" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+    
+    <!-- Root Logger - captures all other log events -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+    
+    <!-- Spring Profile specific configurations -->
+    <springProfile name="dev,development">
+        <!-- Development profile: More verbose logging -->
+        <logger name="com.example.mcpserver" level="DEBUG"/>
+        <logger name="io.modelcontextprotocol" level="DEBUG"/>
+        <root level="DEBUG"/>
+    </springProfile>
+    
+    <springProfile name="prod,production">
+        <!-- Production profile: Less verbose logging -->
+        <logger name="com.example.mcpserver" level="INFO"/>
+        <logger name="io.modelcontextprotocol" level="INFO"/>
+        <logger name="org.springframework" level="WARN"/>
+        <root level="WARN"/>
+    </springProfile>
+    
+    <springProfile name="test">
+        <!-- Test profile: Minimal file logging -->
+        <logger name="com.example.mcpserver" level="DEBUG"/>
+        <root level="INFO"/>
+    </springProfile>
+    
+</configuration>

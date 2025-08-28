@@ -15,10 +15,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Tool for updating existing incident fields with simplified input schema.
- * Accepts only incident name and update data. Field structure and constraints
- * should be obtained from get_updatable_fields tool first. Internal validation
- * is handled by IncidentStorageService.
+ * Tool for performing partial updates (PATCH operations) on existing incidents.
+ * Accepts incident ID and a dynamic updates object containing only the fields to be modified.
+ * Use get_updatable_incident_fields first to understand available fields and their constraints.
  */
 @Component
 public class UpdateIncidentTool implements McpTool {
@@ -29,23 +28,72 @@ public class UpdateIncidentTool implements McpTool {
     private final ObjectMapper objectMapper;
     
     private static final String SCHEMA = """
-        {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "ID of the incident to update (e.g., INC-1234ABCD)."
+            {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "description": "Perform partial update (PATCH) operation on an existing incident. Only include fields that need to be changed.",
+                "properties": {
+                    "incident_id": {
+                        "type": "string",
+                        "description": "Unique identifier of the incident to update. Must be in format INC-XXXXXXXX where X is a hexadecimal digit (0-9, A-F).",
+                        "pattern": "^INC-[A-F0-9]{8}$",
+                        "examples": ["INC-1234ABCD", "INC-9876EF01", "INC-DEADBEEF"]
+                    },
+                    "field_updates": {
+                        "type": "object",
+                        "description": "Object containing only the fields to be updated and their new values. Do not include fields that should remain unchanged. Use get_updatable_incident_fields to see available fields and their validation rules.",
+                        "properties": {
+                            "title": {
+                                "type": "string",
+                                "description": "New title for the incident",
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "examples": ["Database connection timeout", "User authentication failure"]
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "New detailed description of the incident",
+                                "maxLength": 4000,
+                                "minLength": 1,
+                                "examples": ["Users experiencing timeout errors when connecting to database"]
+                            },
+                            "priority": {
+                                "type": "string",
+                                "description": "New priority level - must be exact case match",
+                                "enum": ["Low", "Medium", "High", "Critical"],
+                                "examples": ["High", "Critical"]
+                            },
+                            "status": {
+                                "type": "string",
+                                "description": "New status - must be exact case match",
+                                "enum": ["Open", "In Progress", "Resolved", "Closed"],
+                                "examples": ["In Progress", "Resolved"]
+                            }
+                        },
+                        "additionalProperties": false,
+                        "minProperties": 1,
+                        "examples": [
+                            {"priority": "High", "status": "In Progress"},
+                            {"title": "Updated incident title", "description": "Updated description with more details"},
+                            {"status": "Resolved"}
+                        ]
+                    }
                 },
-                "updates": {
-                    "type": "object",
-                    "description": "Object containing the fields to update and their new values. Use get_updatable_fields to understand the structure and constraints of available fields."
-                }
-            },
-            "required": ["name", "updates"]
-        }
-        """;
-    
+                "required": ["incident_id", "field_updates"],
+                "additionalProperties": false,
+                "examples": [
+                    {
+                        "incident_id": "INC-1234ABCD",
+                        "field_updates": {"priority": "High", "status": "In Progress"}
+                    },
+                    {
+                        "incident_id": "INC-9876EF01",
+                        "field_updates": {"title": "Database connectivity issues", "description": "Multiple users reporting connection timeouts"}
+                    }
+                ]
+            }
+            """;
+
     @Autowired
     public UpdateIncidentTool(IncidentStorageService incidentStorageService, ObjectMapper objectMapper) {
         this.incidentStorageService = incidentStorageService;
@@ -82,81 +130,88 @@ public class UpdateIncidentTool implements McpTool {
     public ValidationResult validate(Map<String, Object> arguments) {
         logger.debug("Validating update_incident arguments: {}", arguments.keySet());
 
-        // Check required fields
-        if (!arguments.containsKey("name") || arguments.get("name") == null) {
-            logger.warn("Validation failed: missing 'name' parameter");
-            return ValidationResult.failure("'name' parameter is required");
+        // Validate incident_id parameter
+        if (!arguments.containsKey("incident_id") || arguments.get("incident_id") == null) {
+            logger.warn("Validation failed: missing 'incident_id' parameter");
+            return ValidationResult.failure("'incident_id' parameter is required");
         }
 
-        if (!arguments.containsKey("updates") || arguments.get("updates") == null) {
-            logger.warn("Validation failed: missing 'updates' parameter");
-            return ValidationResult.failure("'updates' parameter is required");
-        }
-
-        String incidentId = arguments.get("name").toString().trim();
+        String incidentId = arguments.get("incident_id").toString().trim();
         if (incidentId.isEmpty()) {
-            logger.warn("Validation failed: empty 'name' parameter");
-            return ValidationResult.failure("'name' cannot be empty");
+            logger.warn("Validation failed: empty 'incident_id' parameter");
+            return ValidationResult.failure("'incident_id' cannot be empty");
         }
 
-        // Validate incident ID format
+        // Validate incident ID format (INC-XXXXXXXX where X is hex digit)
         if (!incidentId.matches("^INC-[A-F0-9]{8}$")) {
-            logger.warn("Validation failed: invalid incident name format '{}'. Expected format: INC-XXXXXXXX", incidentId);
-            return ValidationResult.failure("'name' must be in format INC-XXXXXXXX where X is a hex digit");
+            logger.warn(
+                    "Validation failed: invalid incident ID format '{}'. Expected format: INC-XXXXXXXX (hex digits)",
+                    incidentId);
+            return ValidationResult.failure(
+                    "'incident_id' must be in format INC-XXXXXXXX where X is a hexadecimal digit (0-9, A-F)");
         }
 
-        // Basic validation that updates is provided (detailed validation handled by IncidentStorageService)
-        Object updatesObj = arguments.get("updates");
-        if (updatesObj == null) {
-            logger.warn("Validation failed: 'updates' parameter is null");
-            return ValidationResult.failure("'updates' cannot be null");
+        // Validate field_updates parameter
+        if (!arguments.containsKey("field_updates") || arguments.get("field_updates") == null) {
+            logger.warn("Validation failed: missing 'field_updates' parameter");
+            return ValidationResult.failure("'field_updates' parameter is required");
         }
-
-        logger.debug("Basic validation successful for update_incident with incident name: '{}'", incidentId);
         return ValidationResult.success();
     }
-    
+
     @Override
-    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context, Map<String, Object> arguments) {
+    public Mono<ToolResult> execute(McpAsyncServerExchange exchange, ToolContext context,
+            Map<String, Object> arguments) {
         logger.info("Executing update_incident tool for session: {}", context.getSessionId());
 
         return Mono.fromCallable(() -> {
-            String incidentId = arguments.get("name").toString().trim();
+            String incidentId = arguments.get("incident_id").toString().trim();
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> updates = (Map<String, Object>) arguments.get("updates");
+            @SuppressWarnings("unchecked") Map<String, Object> fieldUpdates =
+                    (Map<String, Object>) arguments.get("field_updates");
 
-            logger.debug("Attempting to update incident '{}' with fields: {}", incidentId, updates != null ? updates.keySet() : "null");
+            logger.debug("Attempting to update incident '{}' with {} fields: {}", incidentId,
+                    fieldUpdates.size(), fieldUpdates.keySet());
 
             // Check if incident exists
             if (!incidentStorageService.incidentExists(incidentId)) {
                 logger.warn("Update failed: incident '{}' not found", incidentId);
-                Map<String, Object> errorResponse = Map.of(
-                    "message", "Incident not found",
-                    "updated_incident", Map.of()
-                );
+                Map<String, Object> errorResponse =
+                        Map.of("success", false, "error_code", "INCIDENT_NOT_FOUND", "message",
+                                "Incident with ID '" + incidentId + "' was not found", "incident_id",
+                                incidentId, "updated_incident", Map.of());
                 String responseJson = objectMapper.writeValueAsString(errorResponse);
                 return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
             }
 
-            // Update the incident (IncidentStorageService will handle validation)
-            Map<String, Object> updatedIncident = incidentStorageService.updateIncident(incidentId, updates);
+            // Perform the patch update (IncidentStorageService handles detailed validation)
+            Map<String, Object> updatedIncident =
+                    incidentStorageService.updateIncident(incidentId, fieldUpdates);
 
-            logger.info("Successfully updated incident '{}' with {} fields", incidentId, updates != null ? updates.size() : 0);
+            logger.info("Successfully updated incident '{}' with {} fields: {}", incidentId,
+                    fieldUpdates.size(), fieldUpdates.keySet());
             logger.debug("Updated incident data: {}", updatedIncident);
 
-            // Format response
-            Map<String, Object> response = Map.of(
-                "message", "Incident updated successfully",
-                "updated_incident", updatedIncident
-            );
+            // Format success response
+            Map<String, Object> response = Map.of("success", true, "message",
+                    "Incident updated successfully with " + fieldUpdates.size() + " field(s)", "incident_id",
+                    incidentId, "updated_fields", fieldUpdates.keySet(), "updated_incident", updatedIncident);
             String responseJson = objectMapper.writeValueAsString(response);
 
-            return ToolResult.success(
-                List.of(new McpSchema.TextContent(responseJson))
-            );
-        })
-        .doOnError(error -> logger.error("Failed to update incident '{}': {}", arguments.get("name"), error.getMessage(), error))
-        .onErrorResume(error -> Mono.just(ToolResult.error("Failed to update incident: " + error.getMessage())));
+            return ToolResult.success(List.of(new McpSchema.TextContent(responseJson)));
+        }).doOnError(error -> logger.error("Failed to update incident '{}': {}", arguments.get("incident_id"),
+                error.getMessage(), error)).onErrorResume(error -> {
+            // Provide structured error response
+            try {
+                Map<String, Object> errorResponse =
+                        Map.of("success", false, "error_code", "UPDATE_FAILED", "message",
+                                "Failed to update incident: " + error.getMessage(), "incident_id",
+                                arguments.get("incident_id"), "updated_incident", Map.of());
+                String errorJson = objectMapper.writeValueAsString(errorResponse);
+                return Mono.just(ToolResult.success(List.of(new McpSchema.TextContent(errorJson))));
+            } catch (Exception e) {
+                return Mono.just(ToolResult.error("Failed to update incident: " + error.getMessage()));
+            }
+        });
     }
 }

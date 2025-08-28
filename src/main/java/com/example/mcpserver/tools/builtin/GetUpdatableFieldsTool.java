@@ -25,13 +25,14 @@ public class GetUpdatableFieldsTool implements McpTool {
     private static final Logger logger = LoggerFactory.getLogger(GetUpdatableFieldsTool.class);
 
     private final ObjectMapper objectMapper;
-    
+
     private static final String SCHEMA = """
         {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
+            "description": "Get comprehensive metadata about fields that can be updated in incidents. No parameters required.",
             "properties": {},
-            "required": []
+            "additionalProperties": false
         }
         """;
     
@@ -42,12 +43,12 @@ public class GetUpdatableFieldsTool implements McpTool {
     
     @Override
     public String getName() {
-        return "get_updatable_fields";
+        return "get_updatable_incident_fields";
     }
     
     @Override
     public String getDescription() {
-        return "Return structured metadata about incident fields that can be updated, including type, mutability, constraints, and validation rules in SCIM-like format";
+        return "Returns detailed metadata about all incident fields that can be updated, including field types, validation rules, allowed values, and examples. Use this BEFORE calling update_incident to understand what fields are available and how to format them correctly.";
     }
     
     @Override
